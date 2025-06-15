@@ -235,6 +235,7 @@ oceanbase-db|oceanbase-port|oceanbase-host)(?:=((?:.|\n)*))?");
         "    --seed=int             seed RNG with specified int instead of PID" << endl <<
         "    --cpu-affinity=int     set cpu affinity of qcn and its child process to specific CPU" << endl <<
         "    --ignore-crash         ignore crash bug, the fuzzer will not stop when it finds crash issues" << endl <<
+        "    --evaluation           evaluate the number of bugs found in 24 hours, the fuzzer will not stop when it finds bugs" << endl <<
         "    --help                 print available command line options and exit" << endl;
         return 0;
     }
@@ -345,6 +346,12 @@ oceanbase-db|oceanbase-port|oceanbase-host)(?:=((?:.|\n)*))?");
                     cerr << "LOGIC BUG!!! DBMS produces incorrect results" << endl;
                     save_backup_file(".", d_info);
                     qcn->save_testcase("origin");
+
+                    if (options.count("evaluation") > 0) {
+                        // For evaluation, we skip the minimization process
+                        continue;
+                    }
+                    
                     cerr << "minimizing ..." << endl << endl;
                     qcn->minimize_testcase();
                     cerr << endl << endl << "done" << endl;

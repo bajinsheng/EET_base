@@ -156,11 +156,15 @@ static bool is_suitable_proc(string proc_name)
         // || proc_name == "has_server_privilege"
         // || proc_name == "has_schema_privilege"
         // || proc_name == "current_setting"
+        || proc_name == "st_relatematch"
+        || proc_name == "prettify_statement"
         || proc_name == "set_config"
         || proc_name.find("current") != string::npos 
         || proc_name == "row_security_active"
         || proc_name == "string_agg" // may generate random-ordered string
         || proc_name == "regr_slope" // may give undetermine result when the slope close to infinite or 0
+        || proc_name == "postgis_scripts_build_date" // It produces undetermined result
+        || proc_name.find("to_reg") != string::npos // to_regproc, to_regclass, to_regnamespace, to_regtype
         ) {
         return false;
     }
@@ -174,7 +178,8 @@ bool schema_cockroach::is_consistent_with_basic_type(sqltype *rvalue)
         inttype->consistent(rvalue) ||
         realtype->consistent(rvalue) ||
         texttype->consistent(rvalue) ||
-        datetype->consistent(rvalue))
+        datetype->consistent(rvalue) ||
+        rvalue->name == "regtype")
         return true;
     
     return false;
@@ -293,6 +298,7 @@ schema_cockroach::schema_cockroach(string db, unsigned int port, string host, bo
     // supported_setting["jit"] = vector<string>({"on", "off"});
     // supported_setting["plan_cache_mode"] = vector<string>({"auto", "force_custom_plan", "force_generic_plan"});
 
+    enable_analyze_stmt = true;
     target_dbms = "cockroach";
 
     // cerr << "Loading tables...";
@@ -627,8 +633,7 @@ cockroach_connection::cockroach_connection(string db, unsigned int port, string 
     test_db = db;
     test_port = port;
     host_addr = host;
-
-    conn = PQsetdbLogin(host_addr.c_str(), to_string(port).c_str(), NULL, NULL, db.c_str(), NULL, NULL);
+    conn = PQsetdbLogin(host_addr.c_str(), to_string(port).c_str(), NULL, NULL, db.c_str(), username.c_str(), NULL);
     if (PQstatus(conn) == CONNECTION_OK)
         return; // succeed
     
@@ -639,7 +644,7 @@ cockroach_connection::cockroach_connection(string db, unsigned int port, string 
     }
     
     cerr << "try to create database testdb" << endl;
-    conn = PQsetdbLogin(host_addr.c_str(), to_string(test_port).c_str(), NULL, NULL, "defaultdb", NULL, NULL);
+    conn = PQsetdbLogin(host_addr.c_str(), to_string(test_port).c_str(), NULL, NULL, "defaultdb", username.c_str(), NULL);
     if (PQstatus(conn) != CONNECTION_OK) {
         string err = PQerrorMessage(conn);
         cerr << err << " in " << debug_info << endl;
@@ -657,7 +662,7 @@ cockroach_connection::cockroach_connection(string db, unsigned int port, string 
     PQclear(res);
 
     PQfinish(conn);
-    conn = PQsetdbLogin(host_addr.c_str(), to_string(test_port).c_str(), NULL, NULL, test_db.c_str(), NULL, NULL);
+    conn = PQsetdbLogin(host_addr.c_str(), to_string(test_port).c_str(), NULL, NULL, test_db.c_str(), username.c_str(), NULL);
     if (PQstatus(conn) != CONNECTION_OK) {
         string err = PQerrorMessage(conn);
         cerr << err << " in " << debug_info << endl;
@@ -683,7 +688,7 @@ static bool is_expected_error(string error)
 {
     if (error.find("violates not-null constraint") != string::npos
         || error.find("duplicate key value violates unique constraint") != string::npos 
-        || error.find("encoding conversion from UTF8 to ASCII not supported") != string::npos 
+        || error.find("not support") != string::npos 
         || error.find("cannot take logarithm of zero") != string::npos 
         || error.find("invalid regular expression: parentheses") != string::npos
         || error.find("invalid normalization form") != string::npos
@@ -762,6 +767,17 @@ static bool is_expected_error(string error)
         || error.find("prettify_statement(): at or near") != string::npos
         || error.find("error parsing") != string::npos
         || error.find("parsing empty string to geo type") != string::npos
+        || error.find("invalid regexp flag") != string::npos
+        || error.find("overflow") != string::npos
+        || error.find("underflow") != string::npos
+        || error.find("unimplemented") != string::npos
+        || error.find("out of range") != string::npos
+        || error.find("command is too large") != string::npos
+        || error.find("transaction") != string::npos
+        || error.find("disk space") != string::npos
+        || error.find("threshold") != string::npos
+        || error.find("division") != string::npos
+        || error.find("exceed") != string::npos
         )
         return true;
 
@@ -845,7 +861,7 @@ void dut_cockroach::reset(void)
 {
     if (conn) 
         PQfinish(conn);
-    conn = PQsetdbLogin(host_addr.c_str(), to_string(test_port).c_str(), NULL, NULL, "defaultdb", NULL, NULL);
+    conn = PQsetdbLogin(host_addr.c_str(), to_string(test_port).c_str(), NULL, NULL, "defaultdb", username.c_str(), NULL);
     if (PQstatus(conn) != CONNECTION_OK) {
         string err = PQerrorMessage(conn);
         cerr << err << " in " << debug_info << endl;
@@ -883,7 +899,7 @@ void dut_cockroach::reset(void)
     PQclear(res);
 
     PQfinish(conn);
-    conn = PQsetdbLogin(host_addr.c_str(), to_string(test_port).c_str(), NULL, NULL, test_db.c_str(), NULL, NULL);
+    conn = PQsetdbLogin(host_addr.c_str(), to_string(test_port).c_str(), NULL, NULL, test_db.c_str(), username.c_str(), NULL);
     if (PQstatus(conn) != CONNECTION_OK) {
         string err = PQerrorMessage(conn);
         cerr << err << " in " << debug_info << endl;

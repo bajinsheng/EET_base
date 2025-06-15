@@ -41,6 +41,7 @@ struct cockroach_connection {
     string test_db;
     unsigned int test_port;
     string host_addr;
+    string username = "root";
     cockroach_connection(string db, unsigned int port, string host);
     ~cockroach_connection();
 };

@@ -350,6 +350,8 @@ oceanbase-db|oceanbase-port|oceanbase-host)(?:=((?:.|\n)*))?");
 
                     if (options.count("evaluation") > 0) {
                         // For evaluation, we skip the minimization process
+                        auto current_time = get_cur_time_ms();
+                        cerr << "Current time (ms): " << current_time << endl;
                         continue;
                     }
 

@@ -186,6 +186,7 @@ int main(int argc, char *argv[]) {
     regex optregex("--\
 (help|db-test-num|seed|cpu-affinity|\
 ignore-crash|\
+evaluation|\
 sqlite|\
 postgres-db|postgres-port|postgres-path|\
 cockroach-db|cockroach-port|cockroach-host|\
@@ -351,7 +352,7 @@ oceanbase-db|oceanbase-port|oceanbase-host)(?:=((?:.|\n)*))?");
                         // For evaluation, we skip the minimization process
                         continue;
                     }
-                    
+
                     cerr << "minimizing ..." << endl << endl;
                     qcn->minimize_testcase();
                     cerr << endl << endl << "done" << endl;

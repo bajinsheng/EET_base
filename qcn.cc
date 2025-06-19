@@ -423,6 +423,7 @@ oceanbase-db|oceanbase-port|oceanbase-host)(?:=((?:.|\n)*))?");
                 chrono::minutes duration(1);
                 this_thread::sleep_for(duration);
                 cerr << "sleep over, restart testing" << endl;
+                continue;      
             }
             else
                 abort();

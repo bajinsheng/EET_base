@@ -156,6 +156,8 @@ static bool is_suitable_proc(string proc_name)
         // || proc_name == "has_server_privilege"
         // || proc_name == "has_schema_privilege"
         // || proc_name == "current_setting"
+        || proc_name == "yb_mem_usage"
+        || proc_name == "yb_mem_usage_sql"
         || proc_name == "set_config"
         || proc_name.find("current") != string::npos 
         || proc_name == "row_security_active"
@@ -693,6 +695,9 @@ static bool is_expected_error(string error)
         || error.find("could not create unique index") != string::npos
         || error.find("Unicode categorization can only be performed if server encoding is UTF8") != string::npos
         || error.find("invalid type name") != string::npos
+        || error.find("catalog cache lookup is not allowed in multithread mode") != string::npos
+        || error.find("not recognized for type timestamp") != string::npos
+        || error.find("failed to build any") != string::npos
         )
         return true;
 
@@ -816,7 +821,7 @@ void dut_yugabyte::backup(void)
 {
     // do nothing as we can use DB_RECORD_FILE
     
-    // string pgsql_dump = "/usr/local/pgsql/bin/pg_dump -p " + 
+    // string pgsql_dump = "ysql_dump -h 127.0.0.1 -U yugabyte -p " + 
     //                     to_string(test_port) + " " + test_db + " > " + YUGABYTE_BK_FILE(test_db);
     // int ret = system(pgsql_dump.c_str());
     // if (ret != 0) {

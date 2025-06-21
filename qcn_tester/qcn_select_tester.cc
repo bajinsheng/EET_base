@@ -311,7 +311,9 @@ void qcn_select_tester::save_testcase(string dir)
     
     save_backup_file(dir, tested_dbms_info);
     save_query(dir, "select_origin.sql", original_query);
+    cerr << "original query: " << original_query << endl;
     save_query(dir, "select_qit.sql", qit_query);
+    cerr << "qit query: " << qit_query << endl;
     save_queries(dir, "env_stmts.sql", env_setting_stmts);    
 }
 

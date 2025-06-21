@@ -18,22 +18,29 @@ static regex e_string_convert("Cannot convert string[\\s\\S]*from binary to[\\s\
 static regex e_col_null("Column[\\s\\S]*cannot be null[\\s\\S]*");
 static regex e_sridb_pk("Unsupported shard_row_id_bits for table with primary key as row id[\\s\\S]*");
 static regex e_syntax("You have an error in your SQL syntax[\\s\\S]*");
-static regex e_invalid_group("Invalid use of group function");
+static regex e_invalid_group("[\\s\\S]*Invalid[\\s\\S]*");
 static regex e_invalid_group_2("In aggregated query without GROUP BY, expression[\\s\\S]*");
 static regex e_oom("Out Of Memory Quota[\\s\\S]*");
 static regex e_schema_changed("Information schema is changed during the execution of[\\s\\S]*");
 static regex e_over_mem("[\\s\\S]*Your query has been cancelled due to exceeding the allowed memory limit for a single SQL query[\\s\\S]*");
 static regex e_no_default("Field [\\s\\S]* doesn't have a default value");
 static regex e_no_group_by("Expression [\\s\\S]* of SELECT list is not in GROUP BY clause and contains nonaggregated column[\\s\\S]*");
-static regex e_timeout("Query execution was interrupted, maximum statement execution time exceeded");
-
+static regex e_timeout("[\\s\\S]*timeout[\\s\\S]*");
+static regex e_colmn_not_found("[\\s\\S]* cannot find the reference[\\s\\S]*");
+static regex e_too_long("[\\s\\S]*too long[\\s\\S]*");
 // temporarily marked as expected for not reporting dupilcate bugs
-static regex e_invalid_addr("[\\s\\S]*invalid memory address or nil pointer dereference[\\s\\S]*");
+//static regex e_invalid_addr("[\\s\\S]*invalid memory address or nil pointer dereference[\\s\\S]*");
 static regex e_idx_oor("[\\s\\S]*index out of range[\\s\\S]*");
+static regex e_mmp("[\\s\\S]*error for mpp stream[\\s\\S]*");
+static regex e_rpc("[\\s\\S]*rpc error[\\s\\S]*");
 static regex e_expr_pushdown("[\\s\\S]*expression[\\s\\S]*cannot be pushed down[\\s\\S]*");
 static regex e_cannot_column("Can't find column[\\s\\S]*in schema Column[\\s\\S]*");
-static regex e_makeslice("[\\s\\S]*makeslice: cap out of range[\\s\\S]*");
-static regex e_undef_win("Window name [\\s\\S]* is not defined[\\s\\S]*");
+static regex e_interrupted("[\\s\\S]*interrupted[\\s\\S]*");
+static regex e_executor("[\\s\\S]*build executor[\\s\\S]*");
+static regex e_other("[\\s\\S]*other error[\\s\\S]*");
+static regex e_interface("[\\s\\S]*interface conversion[\\s\\S]*");
+//static regex e_makeslice("[\\s\\S]*makeslice: cap out of range[\\s\\S]*");
+//static regex e_undef_win("Window name [\\s\\S]* is not defined[\\s\\S]*");
 
 tidb_connection::tidb_connection(string db, unsigned int port)
 {
@@ -147,8 +154,6 @@ schema_tidb::schema_tidb(string db, unsigned int port)
     texttype = sqltype::get("varchar(100)");
     datetype = sqltype::get("varchar(100)");
 
-    available_table_options.push_back("SHARD_ROW_ID_BITS=0");
-    available_table_options.push_back("SHARD_ROW_ID_BITS=6");
     available_table_options.push_back("PRE_SPLIT_REGIONS=0");
     available_table_options.push_back("PRE_SPLIT_REGIONS=4");
     available_table_options.push_back("AUTO_ID_CACHE=0");
@@ -466,7 +471,7 @@ void dut_tidb::test(const std::string &stmt,
             return;
         }
         if (regex_match(err, e_crash)) {
-            throw runtime_error("BUG!!! " + err + " in mysql::test"); 
+            throw runtime_error("BUG!!! " + err + " in dut_tidb::test"); 
         }
         string prefix = "tidb test expected error:";
         if (regex_match(err, e_dup_entry) 
@@ -482,7 +487,10 @@ void dut_tidb::test(const std::string &stmt,
             || regex_match(err, e_view_reference) 
             || regex_match(err, e_context_cancel)
             || regex_match(err, e_string_convert)
+            || regex_match(err, e_too_long)
             || regex_match(err, e_idx_oor)
+            || regex_match(err, e_mmp)
+            || regex_match(err, e_rpc)
             || regex_match(err, e_col_null)
             || regex_match(err, e_sridb_pk)
             || regex_match(err, e_syntax)
@@ -492,12 +500,17 @@ void dut_tidb::test(const std::string &stmt,
             || regex_match(err, e_oom)
             || regex_match(err, e_cannot_column)
             || regex_match(err, e_schema_changed)
-            || regex_match(err, e_invalid_addr)
-            || regex_match(err, e_makeslice)
-            || regex_match(err, e_undef_win)
+            //|| regex_match(err, e_invalid_addr)
+            //|| regex_match(err, e_makeslice)
+            //|| regex_match(err, e_undef_win)
             || regex_match(err, e_over_mem)
             || regex_match(err, e_no_default)
             || regex_match(err, e_no_group_by)
+            || regex_match(err, e_colmn_not_found)
+            || regex_match(err, e_interrupted)
+            || regex_match(err, e_executor)
+            || regex_match(err, e_other)
+            || regex_match(err, e_interface)
            ) {
             throw runtime_error(prefix + err);
         }
@@ -562,13 +575,25 @@ void dut_tidb::reset(void)
 
 void dut_tidb::backup(void)
 {
-    auto backup_name = "/tmp/" + test_db + "_bk.sql";
-    string mysql_dump = "mysqldump -h 127.0.0.1 -P " + to_string(test_port) + " -u root " + test_db + " > " + backup_name;
-    int ret = system(mysql_dump.c_str());
+    auto backup_name = "/tmp/" + test_db + "_bk";
+    string rm_cmd = "rm -rf " + backup_name;
+    int ret = system(rm_cmd.c_str());
+    if (ret != 0) {
+        cerr << "rm backup fail in dut_tidb::backup!!" << endl;
+        throw std::runtime_error("rm backup fail in dut_tidb::backup"); 
+    }
+    string tidb_dump = "tiup dumpling -h 127.0.0.1 -P " + to_string(test_port) + " -u root --no-views=false -B " + test_db + " -o " + backup_name + " >/dev/null 2>&1";
+    ret = system(tidb_dump.c_str());
     if (ret != 0) {
         cerr << "backup fail in dut_tidb::backup!!" << endl;
         throw std::runtime_error("backup fail in dut_tidb::backup"); 
     }
+    string merge_cmd = "cat " + backup_name + "/*.sql > " + backup_name + ".sql";
+    ret = system(merge_cmd.c_str());
+    if (ret != 0) {
+        cerr << "merge backup fail in dut_tidb::backup!!" << endl;
+        throw std::runtime_error("merge backup fail in dut_tidb::backup"); 
+    } 
 }
 
 void dut_tidb::reset_to_backup(void)
